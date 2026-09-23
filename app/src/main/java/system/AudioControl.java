@@ -58,6 +58,10 @@ public class AudioControl {
     }
 
     public void cleanup() {
+        if (audioReverb != null) {
+            audioReverb.release();
+            audioReverb = null;
+        }
         if (null != audioTrack) {
             audioTrack.pause();
             audioTrack.flush();
@@ -87,15 +91,15 @@ public class AudioControl {
         try {
             audioReverb = new PresetReverb(0, audioTrack.getAudioSessionId());
             audioReverb.setPreset(PresetReverb.PRESET_LARGEHALL);
-            setReverb(prefs.isReverbEnabled());
-        } catch (IllegalArgumentException e) {
-            audioReverb = null;
-            logger.info("Audio reverb not supported. Disabling effect.");
-        }
-
-        if (null != audioReverb) {
+            audioReverb.setEnabled(prefs.isReverbEnabled());
             audioTrack.attachAuxEffect(audioReverb.getId());
             audioTrack.setAuxEffectSendLevel(1.0f);
+        } catch (RuntimeException e) {
+            if (audioReverb != null) {
+                audioReverb.release();
+            }
+            audioReverb = null;
+            logger.warning("Audio reverb unavailable; continuing without it: " + e.getMessage());
         }
 
         audioThread = new Thread(new Runnable() {
@@ -264,7 +268,13 @@ public class AudioControl {
 
     public void setReverb(boolean reverbEnabled) {
         if (null != audioReverb) {
-            audioReverb.setEnabled(reverbEnabled);
+            try {
+                audioReverb.setEnabled(reverbEnabled);
+            } catch (RuntimeException e) {
+                logger.warning("Audio reverb unavailable; disabling effect: " + e.getMessage());
+                audioReverb.release();
+                audioReverb = null;
+            }
         }
     }
 

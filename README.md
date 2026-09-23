@@ -26,6 +26,9 @@ T64, PRG, SNAP, or ZIP file, and tap **Re-Scan Disks**. Imported files and
 snapshots are stored in the app's private storage. The app targets Android 15
 (API 35); pull request builds compile and boot on Android 16 (API 36), and
 scheduled release builds use the latest stable Android platform.
+The app supports both portrait and landscape. On devices without the optional
+Android reverb effect, sound continues without reverb instead of crashing at
+startup.
 
 Build locally with JDK 17, Android SDK Platform 35, Build Tools 35.0.0,
 NDK 27.2.12479018, and CMake 3.22.1:

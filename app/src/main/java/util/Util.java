@@ -62,19 +62,10 @@ public class Util {
     */
 
     public static Rect matchSize(int width, int height) {
-        int zoom_factor = Math.min(width / (Control.DISPLAY_X-44),
-                                   height / (Control.DISPLAY_Y-80));
-        if (zoom_factor < 1)
-        {
-            zoom_factor = 1;
-        }
-        else if (zoom_factor > 32)
-        {
-            zoom_factor = 32;
-        }
-
-        int outW = Control.DISPLAY_X  * zoom_factor;
-        int outH = Control.DISPLAY_Y  * zoom_factor;
+        float scale = Math.min((float) width / Control.DISPLAY_X,
+                               (float) height / Control.DISPLAY_Y);
+        int outW = Math.round(Control.DISPLAY_X * scale);
+        int outH = Math.round(Control.DISPLAY_Y * scale);
         int outX = (width - outW) / 2;
         int outY = (height - outH) / 2;
 

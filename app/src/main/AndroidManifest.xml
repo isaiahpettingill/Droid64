@@ -17,7 +17,6 @@
 
             android:name="ui.FullscreenActivity"
             android:exported="true"
-            android:configChanges="orientation|keyboardHidden|screenSize"
             android:label="@string/app_name" >
 
             <intent-filter>
