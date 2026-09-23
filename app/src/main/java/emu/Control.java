@@ -355,8 +355,10 @@ public class Control {
 
 		byte[] imageBuffer = image.load();
 		if (null != imageBuffer) {
-			ImageManager.instance().setCurrent(image);
-			return attachDisk(image.getType(), imageBuffer, imageBuffer.length,  image.getUrl());
+			if (attachDisk(image.getType(), imageBuffer, imageBuffer.length, image.getUrl())) {
+				ImageManager.instance().setCurrent(image);
+				return true;
+			}
 		}
 
 		return false;
@@ -428,6 +430,13 @@ public class Control {
 	public void softReset(Image diskImage) {
 		sendCommand(NativeInterface.COMMAND_RESET);
 		keyboardInputDelay = 50;
+	}
+
+	public void ejectCartridge() {
+		sendCommand(NativeInterface.COMMAND_EJECT_CARTRIDGE);
+		Image current = ImageManager.instance().getCurrent();
+		if (current != null && current.getType() == Image.TYPE_CARTRIDGE)
+			ImageManager.instance().setCurrent(null);
 	}
 
 	public void hardReset(Image autoStartImage) {

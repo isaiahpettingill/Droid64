@@ -159,6 +159,61 @@ C64::C64()
 {
     diskImageBuffer = NULL;
     diskImageSize = 0;
+    cartridgeMode = 0;
+    memset(cartridgeLow, 0xff, sizeof(cartridgeLow));
+    memset(cartridgeHigh, 0xff, sizeof(cartridgeHigh));
+}
+
+static uint32_t cartridgeBE32(const uint8* p)
+{
+    return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | p[3];
+}
+
+bool C64::loadCartridge(const uint8* data, int size)
+{
+    // CRT format: 64-byte header followed by CHIP packets. Refuse banked
+    // cartridges and partial ROMs rather than silently running the wrong game.
+    if (!data || size < 0x40 || memcmp(data, "C64 CARTRIDGE   ", 16) != 0)
+        return false;
+    uint32_t header = cartridgeBE32(data + 0x10);
+    if (header < 0x40 || header > uint32_t(size) || data[0x16] != 0 || data[0x17] != 0)
+        return false;
+    int mode = (data[0x18] == 0 && data[0x19] == 0) ? 2 :
+               (data[0x18] == 0 && data[0x19] == 1) ? 1 : 0;
+    if (!mode) return false;
+    uint8 low[8192], high[8192];
+    memset(low, 0xff, sizeof(low));
+    memset(high, 0xff, sizeof(high));
+    bool haveLow = false, haveHigh = false;
+    for (uint32_t at = header; at < uint32_t(size); ) {
+        if (uint32_t(size) - at < 0x10 || memcmp(data + at, "CHIP", 4) != 0)
+            return false;
+        uint32_t length = cartridgeBE32(data + at + 4);
+        int bank = (data[at + 0x0a] << 8) | data[at + 0x0b];
+        int address = (data[at + 0x0c] << 8) | data[at + 0x0d];
+        int bytes = (data[at + 0x0e] << 8) | data[at + 0x0f];
+        if (length < 0x10 || length > uint32_t(size) - at || bank != 0 ||
+            (bytes != 8192 && bytes != 16384) || length != uint32_t(bytes + 0x10) ||
+            (data[at + 8] | data[at + 9]) != 0)
+            return false;
+        if (address == 0x8000 && !haveLow && (bytes == 8192 || mode == 2)) {
+            memcpy(low, data + at + 0x10, 8192);
+            haveLow = true;
+            if (bytes == 16384) {
+                memcpy(high, data + at + 0x10 + 8192, 8192);
+                haveHigh = true;
+            }
+        } else if (address == 0xa000 && mode == 2 && !haveHigh) {
+            memcpy(high, data + at + 0x10, 8192);
+            haveHigh = true;
+        } else return false;
+        at += length;
+    }
+    if (!haveLow || (mode == 2 && !haveHigh)) return false;
+    memcpy(cartridgeLow, low, sizeof(low));
+    memcpy(cartridgeHigh, high, sizeof(high));
+    cartridgeMode = mode;
+    return true;
 }
 
 

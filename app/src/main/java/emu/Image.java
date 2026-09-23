@@ -23,6 +23,7 @@ public class Image {
     public static final int TYPE_DISK = 2;
     public static final int TYPE_TAPE = 3;
     public static final int TYPE_DIR = 4;
+    public static final int TYPE_CARTRIDGE = 5;
 
     private boolean zip;
 
@@ -64,6 +65,8 @@ public class Image {
                 type = TYPE_TAPE;
             } else if (ext.equals("prg")) {
                 type = TYPE_DIR;
+            } else if (ext.equals("crt")) {
+                type = TYPE_CARTRIDGE;
             }
         }
 

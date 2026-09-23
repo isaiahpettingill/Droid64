@@ -195,32 +195,36 @@ public class ImageManager {
 
 	/** Copy a user-selected document into private storage so the existing emulator can use its path. */
 	public boolean importDocument(Uri uri) {
-		if (context == null || uri == null) return false;
+		return importDocumentImage(uri) != null;
+	}
+
+	public Image importDocumentImage(Uri uri) {
+		if (context == null || uri == null) return null;
 		String name = null;
 		try (Cursor cursor = context.getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
 			if (cursor != null && cursor.moveToFirst()) name = cursor.getString(0);
 		} catch (RuntimeException e) {
 			logger.warning("Cannot read document name: " + e.getMessage());
 		}
-		if (name == null) return false;
+		if (name == null) return null;
 		name = new File(name).getName();
 		String extension = getFileExtension(name);
-		if (!(isValidExtension(extension) || "zip".equals(extension))) return false;
+		if (!(isValidExtension(extension) || "zip".equals(extension))) return null;
 		File dir = new File(context.getFilesDir(), "Imported");
-		if (!dir.isDirectory() && !dir.mkdirs()) return false;
+		if (!dir.isDirectory() && !dir.mkdirs()) return null;
 		File dest = new File(dir, name);
 		try (InputStream input = context.getContentResolver().openInputStream(uri);
 			 OutputStream output = new FileOutputStream(dest)) {
-			if (input == null) return false;
+			if (input == null) return null;
 			byte[] buffer = new byte[8192];
 			int count;
 			while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
 			invalidateList();
-			return true;
+			return new Image(dest.getAbsolutePath());
 		} catch (IOException | SecurityException e) {
 			dest.delete();
 			logger.warning("Cannot import document: " + e.getMessage());
-			return false;
+			return null;
 		}
 	}
 
@@ -365,7 +369,7 @@ public class ImageManager {
 
 	public static boolean isValidExtension(String ext) {
 
-		if (ext.equalsIgnoreCase("d64") || ext.equalsIgnoreCase("snap")) {
+		if (ext.equalsIgnoreCase("d64") || ext.equalsIgnoreCase("snap") || ext.equalsIgnoreCase("crt")) {
 			return true;
 		}
 
