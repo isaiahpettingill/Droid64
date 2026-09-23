@@ -131,6 +131,12 @@ public class FileDialog extends DialogFragment {
                 loadContent(FileDialog.this.dialog, true);
             }
         });
+		this.dialog.findViewById(R.id.buttonImport).setOnClickListener(new View.OnClickListener() {
+			@Override
+			public void onClick(View v) {
+				((FullscreenActivity) getActivity()).importDisk();
+			}
+		});
 
         loadContent(this.dialog, false);
 

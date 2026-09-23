@@ -1,17 +1,14 @@
 package ui;
 
-import android.Manifest;
+import android.content.Intent;
 import android.annotation.TargetApi;
 import android.app.ActivityManager;
 import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ConfigurationInfo;
-import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
-import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentActivity;
-import android.support.v4.content.ContextCompat;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -116,7 +113,7 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
 
     }
 
-    private static final int REQUEST_READWRITE_STORAGE = 1234;
+    private static final int REQUEST_IMPORT_DISK = 1234;
 
     public FullscreenActivity() {
         instantiateEmu();
@@ -135,37 +132,19 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
         emuControl.init();
     }
 
-    private boolean checkPermissions() {
-
-        int permissionCheck1 = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE);
-        int permissionCheck2 = ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE);
-
-        logger.info("Permission check: " + permissionCheck1 + " / " + permissionCheck2);
-
-        if (permissionCheck1 != PackageManager.PERMISSION_GRANTED ||
-            permissionCheck2 != PackageManager.PERMISSION_GRANTED) {
-
-            logger.info("Permission check failed - request permissions");
-
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                            Manifest.permission.READ_EXTERNAL_STORAGE},
-                    REQUEST_READWRITE_STORAGE);
-        }
-
-        return true;
+    public void importDisk() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.setType("*/*");
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        startActivityForResult(intent, REQUEST_IMPORT_DISK);
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode,
-                                           String[] permissions,
-                                           int[] grantResults) {
-        if (requestCode == REQUEST_READWRITE_STORAGE) {
-            if ((grantResults.length > 0) && (grantResults[0] == PackageManager.PERMISSION_GRANTED)) {
-                //finishCreationStep();
-
-                logger.info("PERMISSION HAS BEEN GRANTED!!!");
-            }
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_IMPORT_DISK && resultCode == RESULT_OK && data != null) {
+            boolean imported = diskManager.importDocument(data.getData());
+            Toast.makeText(this, imported ? "Disk imported; tap Re-Scan Disks" : "Could not import disk image", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -194,8 +173,6 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
         keyboardVisible = false;
 
         checkOpenGL();
-
-        checkPermissions();
 
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
 
