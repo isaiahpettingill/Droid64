@@ -19,12 +19,10 @@ left, top, right, bottom = map(int, re.findall(r"\d+", button.get("bounds")))
 adb("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
 for _ in range(8):
     time.sleep(1)
-    adb("shell", "uiautomator", "dump", "/sdcard/keyboard.xml")
-    hierarchy = ET.fromstring(adb("shell", "cat", "/sdcard/keyboard.xml"))
-    if any("inputmethod" in node.get("package", "") for node in hierarchy.iter()):
+    state = adb("shell", "dumpsys", "input_method")
+    if "mIsInputViewShown=true" in state and "mShowInputRequested=true" in state:
         print("Android soft keyboard appeared")
         break
 else:
-    print("Visible packages:", sorted({node.get("package", "") for node in hierarchy.iter()}))
-    print("Input method state:", adb("shell", "dumpsys", "input_method")[-5000:])
+    print("Input method state:", state[-5000:])
     raise SystemExit("Android soft keyboard did not appear")
