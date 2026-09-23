@@ -144,6 +144,7 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
     private int mappedStickMask;
     private float swipeStartY;
     private boolean swipeFromTop;
+    private boolean swipeConsumed;
 
     public FullscreenActivity() {
         instantiateEmu();
@@ -249,18 +250,6 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
             public boolean onTouch(View v, MotionEvent e) {
 
                 int action = e.getActionMasked();
-                if (action == MotionEvent.ACTION_DOWN) {
-                    swipeStartY = e.getY();
-                    swipeFromTop = swipeStartY < getResources().getDisplayMetrics().density * 72;
-                } else if (action == MotionEvent.ACTION_MOVE && swipeFromTop) {
-                    if (e.getY() - swipeStartY > getResources().getDisplayMetrics().density * 55) {
-                        setMenuVisible(true);
-                        swipeFromTop = false;
-                        mouseDown = false;
-                    }
-                    return true;
-                }
-
                 if (MotionEvent.ACTION_DOWN == action || MotionEvent.ACTION_POINTER_DOWN == action) {
 
                     if (isControlsVisible()) {
@@ -538,6 +527,32 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
                 swipeMenu.getVisibility() != View.VISIBLE && !hasConnectedController() && !isControlsVisible();
         if (!visible) touchControls.clearInput();
         touchControls.setVisibility(visible ? View.VISIBLE : View.GONE);
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN && contentFrame != null) {
+            int[] origin = new int[2];
+            contentFrame.getLocationOnScreen(origin);
+            float y = event.getRawY() - origin[1];
+            swipeStartY = event.getRawY();
+            swipeFromTop = y >= 0 && y < dp(72) && swipeMenu.getVisibility() != View.VISIBLE;
+            swipeConsumed = false;
+        } else if (action == MotionEvent.ACTION_MOVE && swipeFromTop &&
+                event.getRawY() - swipeStartY > dp(55)) {
+            swipeFromTop = false;
+            swipeConsumed = true;
+            mouseDown = false;
+            setMenuVisible(true);
+        } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            swipeFromTop = false;
+            if (swipeConsumed) {
+                swipeConsumed = false;
+                return true;
+            }
+        }
+        return swipeConsumed || super.dispatchTouchEvent(event);
     }
 
     private String mediaExtension(int type) {
