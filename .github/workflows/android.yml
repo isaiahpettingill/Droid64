@@ -71,7 +71,7 @@ jobs:
             adb shell am start -n org.codewiz.droid64/ui.FullscreenActivity
             sleep 15
             adb shell cmd statusbar collapse
-            adb shell input swipe 150 210 150 650 300
+            adb shell input swipe 150 120 150 650 300
             adb shell uiautomator dump /sdcard/window.xml
             adb shell cat /sdcard/window.xml | grep -o 'text="[^"]*"' | head -30 || true
             adb logcat -d -v brief | grep -E 'FATAL EXCEPTION|AndroidRuntime|FullscreenActivity' | tail -30 || true
