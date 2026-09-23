@@ -24,8 +24,8 @@ Android 16 and arm64 builds include a native `arm64-v8a` library. To add a
 disk image, open Select Disk, choose **Import disk or archive**, pick a D64,
 T64, PRG, SNAP, or ZIP file, and tap **Re-Scan Disks**. Imported files and
 snapshots are stored in the app's private storage. The app targets Android 15
-(API 35) and is built against the latest stable Android platform by the
-scheduled release workflow.
+(API 35); pull request builds compile and boot on Android 16 (API 36), and
+scheduled release builds use the latest stable Android platform.
 
 Build locally with JDK 17, Android SDK Platform 35, Build Tools 35.0.0,
 NDK 27.2.12479018, and CMake 3.22.1:
