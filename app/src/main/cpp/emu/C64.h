@@ -123,6 +123,10 @@ class C64 {
         int diskImageSize;
 
     public:
+        // Only standard, fixed 8K and 16K ROM cartridges are supported.
+        uint8 cartridgeLow[8192], cartridgeHigh[8192];
+        int cartridgeMode; // 0=none, 1=8K, 2=16K
+        bool loadCartridge(const uint8* data, int size);
         void attachDiskImage(const uint8* imageData, int imageSize);
         void detachDiskImage();
         const uint8* getDiskImage();

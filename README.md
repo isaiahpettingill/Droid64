@@ -28,6 +28,15 @@ The app supports both portrait and landscape. On devices without the optional
 Android reverb effect, sound continues without reverb instead of crashing at
 startup.
 
+Swipe down from the top of the C64 screen or tap **↓ Menu** to insert a D64 disk,
+T64 tape, or standard 8K/16K CRT cartridge, open the Android keyboard, or map
+controller buttons. The menu also offers **Load and run** for disk and tape
+images. CRT cartridges with bank switching or special hardware are rejected.
+The on-screen joystick and fire button appear when no controller is connected
+and the keyboard is hidden. Plug in a USB controller or pair a Bluetooth
+controller through Android, then use **Connect / map controller** to assign
+buttons for each device. Analog sticks continue to use Android's standard axes.
+
 Build locally with JDK 17, Android SDK Platform 35, Build Tools 35.0.0,
 NDK 27.2.12479018, and CMake 3.22.1:
 

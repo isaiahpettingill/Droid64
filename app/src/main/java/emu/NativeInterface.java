@@ -10,6 +10,7 @@ public class NativeInterface {
 	public static int COMMAND_RESTORE         = 5;
 	public static int COMMAND_JOYSTICK_SWAP_ON  = 6;
 	public static int COMMAND_JOYSTICK_SWAP_OFF  = 7;
+	public static int COMMAND_EJECT_CARTRIDGE = 8;
 
 	static {
         System.loadLibrary("Droid64");

@@ -3,11 +3,21 @@ package ui;
 import android.content.Intent;
 import android.annotation.TargetApi;
 import android.app.ActivityManager;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.content.Context;
 import android.content.pm.ConfigurationInfo;
+import android.graphics.Color;
+import android.hardware.input.InputManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
+import android.provider.Settings;
 import android.support.v4.app.FragmentActivity;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.TextWatcher;
+import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -15,10 +25,17 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver.OnGlobalLayoutListener;
 import android.view.Window;
+import android.view.WindowInsets;
 import android.view.WindowManager;
+import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import org.codewiz.droid64.R;
@@ -40,6 +57,7 @@ import util.SystemUiHider;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.ArrayList;
 
 /**
  * An example full-screen activity that shows and hides the system UI (i.e.
@@ -47,7 +65,7 @@ import java.util.List;
  * 
  * @see SystemUiHider
  */
-public class FullscreenActivity extends FragmentActivity implements FileDialog.OnDiskSelectHandler, EmuControlFragment.OnFragmentInteractionListener, EmuViewFragment.OnFragmentInteractionListener {
+public class FullscreenActivity extends FragmentActivity implements FileDialog.OnDiskSelectHandler, EmuControlFragment.OnFragmentInteractionListener, EmuViewFragment.OnFragmentInteractionListener, InputManager.InputDeviceListener {
 
     private final static Logger logger = LogManager.getLogger(FullscreenActivity.class.getName());
 
@@ -113,6 +131,19 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
     }
 
     private static final int REQUEST_IMPORT_DISK = 1234;
+    private static final int REQUEST_INSERT_MEDIA = 1235;
+    private int requestedMediaType;
+    private FrameLayout contentFrame;
+    private View swipeMenu;
+    private TouchControlsView touchControls;
+    private EditText keyboardInput;
+    private boolean clearingKeyboardInput;
+    private boolean touchControlsEnabled;
+    private ControllerBindings controllerBindings;
+    private InputManager inputManager;
+    private int mappedStickMask;
+    private float swipeStartY;
+    private boolean swipeFromTop;
 
     public FullscreenActivity() {
         instantiateEmu();
@@ -144,6 +175,15 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
         if (requestCode == REQUEST_IMPORT_DISK && resultCode == RESULT_OK && data != null) {
             boolean imported = diskManager.importDocument(data.getData());
             Toast.makeText(this, imported ? "Disk imported; tap Re-Scan Disks" : "Could not import disk image", Toast.LENGTH_LONG).show();
+        } else if (requestCode == REQUEST_INSERT_MEDIA && resultCode == RESULT_OK && data != null) {
+            Image image = diskManager.importDocumentImage(data.getData());
+            if (image == null || image.getType() != requestedMediaType) {
+                Toast.makeText(this, "Select a " + mediaExtension(requestedMediaType) + " file", Toast.LENGTH_LONG).show();
+            } else {
+                boolean inserted = emuControl.attachDisk(image);
+                Toast.makeText(this, inserted ? "Inserted " + image.getName() :
+                        "Unsupported image (cartridges require a standard 8K/16K CRT)", Toast.LENGTH_LONG).show();
+            }
         }
     }
 
@@ -175,6 +215,7 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
 
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
 
         setContentView(R.layout.activity_fullscreen);
 
@@ -186,6 +227,10 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
         controlsView = findViewById(R.id.controls_fragment);
 
         createKeyButtons();
+        controllerBindings = new ControllerBindings(this);
+        inputManager = (InputManager) getSystemService(Context.INPUT_SERVICE);
+        touchControlsEnabled = getPreferences(MODE_PRIVATE).getBoolean("touch_controls", true);
+        setupOverlay();
 
         emuView.getViewTreeObserver().addOnGlobalLayoutListener(new OnGlobalLayoutListener() {
 
@@ -204,6 +249,17 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
             public boolean onTouch(View v, MotionEvent e) {
 
                 int action = e.getActionMasked();
+                if (action == MotionEvent.ACTION_DOWN) {
+                    swipeStartY = e.getY();
+                    swipeFromTop = swipeStartY < getResources().getDisplayMetrics().density * 72;
+                } else if (action == MotionEvent.ACTION_MOVE && swipeFromTop) {
+                    if (e.getY() - swipeStartY > getResources().getDisplayMetrics().density * 55) {
+                        setMenuVisible(true);
+                        swipeFromTop = false;
+                        mouseDown = false;
+                    }
+                    return true;
+                }
 
                 if (MotionEvent.ACTION_DOWN == action || MotionEvent.ACTION_POINTER_DOWN == action) {
 
@@ -222,13 +278,7 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
                     mouseDownY = mouseY;
 
                     int area = getTouchArea(mouseX, mouseY);
-                    if (0 != (area & AREA_MIDDLE)) {
-                        if (isEmuView(v)) {
-                            VirtualGamepad.instance().onTouch(v, e);
-                        } else {
-                            return false; // wrong view
-                        }
-                    }
+                    // Touch joystick is handled by the dedicated overlay.
 
                 } else if (MotionEvent.ACTION_UP == action || MotionEvent.ACTION_POINTER_UP == action) {
 
@@ -248,12 +298,7 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
 
                     int area = getTouchArea(mouseX, mouseY);
                     if (0 != (area & AREA_MIDDLE)) {
-                        if (isEmuView(v)) {
-                            //logger.info("Clicked to emuview");
-                            VirtualGamepad.instance().onTouch(v, e);
-                        } else {
-                            return false; // wrong view
-                        }
+                        return true;
                     } else {
 
                         // logger.info("H DISTANCE: " + Math.abs(mouseX - mouseDownX));
@@ -276,11 +321,7 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
 
                     int area = getTouchArea(mouseX, mouseY);
                     if (0 != (area & AREA_MIDDLE)) {
-                        if (isEmuView(v)) {
-                            VirtualGamepad.instance().onTouch(v, e);
-                        } else {
-                            return false; // wrong view
-                        }
+                        return true;
                     }
 
                 } else {
@@ -344,7 +385,7 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
 
                 } else if (buttonId == GameController.ID_BUTTON_SELECT || buttonId == GameController.ID_BUTTON_MENU) {
 
-                    setControlsVisible(!isControlsVisible());
+                    setMenuVisible(swipeMenu.getVisibility() != View.VISIBLE);
 
                 } else if (buttonId == GameController.ID_BUTTON_PLAY_PAUSE) {
 
@@ -384,6 +425,263 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
 
         VirtualGamepad.instance().init(this, emuView);
     }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private void addMenuButton(LinearLayout menu, String label, View.OnClickListener listener) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setAllCaps(false);
+        button.setOnClickListener(listener);
+        menu.addView(button, new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    private void setupOverlay() {
+        contentFrame = findViewById(android.R.id.content);
+        if (Build.VERSION.SDK_INT >= 30) {
+            contentFrame.setOnApplyWindowInsetsListener((view, insets) -> {
+                boolean shown = insets.isVisible(WindowInsets.Type.ime());
+                if (keyboardVisible != shown) {
+                    keyboardVisible = shown;
+                    updateTouchControls();
+                }
+                return view.onApplyWindowInsets(insets);
+            });
+        }
+        FrameLayout viewFrame = findViewById(R.id.emuViewFrame);
+
+        keyboardInput = new EditText(this);
+        keyboardInput.setAlpha(0);
+        keyboardInput.setSingleLine(true);
+        keyboardInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        keyboardInput.setImeOptions(EditorInfo.IME_ACTION_NONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        viewFrame.addView(keyboardInput, new FrameLayout.LayoutParams(dp(2), dp(2), Gravity.TOP | Gravity.LEFT));
+        keyboardInput.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (clearingKeyboardInput) return;
+                if (count == 0 && before > 0) sendC64Key(KeyCode.C64KEY_INSTDEL);
+                for (int i = start; i < start + count; i++) sendTypedCharacter(s.charAt(i));
+            }
+            @Override public void afterTextChanged(Editable s) {
+                if (!clearingKeyboardInput && s.length() > 0) {
+                    clearingKeyboardInput = true;
+                    s.clear();
+                    clearingKeyboardInput = false;
+                }
+            }
+        });
+        keyboardInput.setOnEditorActionListener((v, actionId, event) -> {
+            sendC64Key(KeyCode.C64KEY_RETURN);
+            return true;
+        });
+
+        touchControls = new TouchControlsView(this);
+        viewFrame.addView(touchControls, new FrameLayout.LayoutParams(-1, dp(160), Gravity.BOTTOM));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(Color.rgb(25, 29, 39));
+        scroll.setVisibility(View.GONE);
+        swipeMenu = scroll;
+        LinearLayout menu = new LinearLayout(this);
+        menu.setOrientation(LinearLayout.VERTICAL);
+        menu.setPadding(dp(12), dp(16), dp(12), dp(12));
+        scroll.addView(menu);
+        addMenuButton(menu, "Insert disk (.d64)", v -> chooseMedia(Image.TYPE_DISK));
+        addMenuButton(menu, "Insert tape (.t64)", v -> chooseMedia(Image.TYPE_TAPE));
+        addMenuButton(menu, "Insert cartridge (.crt)", v -> chooseMedia(Image.TYPE_CARTRIDGE));
+        addMenuButton(menu, "Eject cartridge", v -> {
+            setMenuVisible(false);
+            emuControl.ejectCartridge();
+        });
+        addMenuButton(menu, "Show keyboard", v -> { setMenuVisible(false); setKeyboardVisible(true); });
+        addMenuButton(menu, "Load and run", v -> {
+            setMenuVisible(false);
+            emuControl.keyInput(KeySequence.sequence_Load_Asterisk_8_1_Run);
+        });
+        addMenuButton(menu, "Touch controls on/off", v -> {
+            touchControlsEnabled = !touchControlsEnabled;
+            getPreferences(MODE_PRIVATE).edit().putBoolean("touch_controls", touchControlsEnabled).apply();
+            setMenuVisible(false);
+        });
+        addMenuButton(menu, "Connect / map controller", v -> { setMenuVisible(false); showControllerDialog(); });
+        addMenuButton(menu, "More controls", v -> { setMenuVisible(false); setControlsVisible(true); });
+        addMenuButton(menu, "Close menu", v -> setMenuVisible(false));
+        FrameLayout.LayoutParams menuParams = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
+        menuParams.bottomMargin = dp(50);
+        contentFrame.addView(scroll, menuParams);
+        // A visible grab handle makes the swipe gesture discoverable.
+        TextView handle = new TextView(this);
+        handle.setText("↓ Menu");
+        handle.setTextColor(Color.WHITE);
+        handle.setBackgroundColor(Color.argb(170, 25, 29, 39));
+        handle.setGravity(Gravity.CENTER);
+        handle.setOnClickListener(v -> setMenuVisible(swipeMenu.getVisibility() != View.VISIBLE));
+        contentFrame.addView(handle, new FrameLayout.LayoutParams(dp(100), dp(42), Gravity.TOP | Gravity.CENTER_HORIZONTAL));
+        updateTouchControls();
+    }
+
+    private void setMenuVisible(boolean visible) {
+        swipeMenu.setVisibility(visible ? View.VISIBLE : View.GONE);
+        if (visible) {
+            setKeyboardVisible(false);
+            touchControls.clearInput();
+        }
+        updateTouchControls();
+    }
+
+    private void updateTouchControls() {
+        if (touchControls == null) return;
+        boolean visible = touchControlsEnabled && !keyboardVisible &&
+                swipeMenu.getVisibility() != View.VISIBLE && !hasConnectedController() && !isControlsVisible();
+        if (!visible) touchControls.clearInput();
+        touchControls.setVisibility(visible ? View.VISIBLE : View.GONE);
+    }
+
+    private String mediaExtension(int type) {
+        return type == Image.TYPE_TAPE ? ".t64" : type == Image.TYPE_CARTRIDGE ? ".crt" : ".d64";
+    }
+
+    private void chooseMedia(int type) {
+        setMenuVisible(false);
+        requestedMediaType = type;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        startActivityForResult(intent, REQUEST_INSERT_MEDIA);
+    }
+
+    private void sendC64Key(int code) {
+        emuControl.keyInput(code | KeyCode.KEYFLAG_PRESSED);
+        emuControl.keyInput(code | KeyCode.KEYFLAG_RELEASED);
+    }
+
+    private void sendTypedCharacter(char character) {
+        int key;
+        if (character >= 'a' && character <= 'z') key = KeyEvent.KEYCODE_A + character - 'a';
+        else if (character >= 'A' && character <= 'Z') key = KeyEvent.KEYCODE_A + character - 'A';
+        else if (character >= '0' && character <= '9') key = KeyEvent.KEYCODE_0 + character - '0';
+        else {
+            switch (character) {
+                case ' ': key = KeyEvent.KEYCODE_SPACE; break;
+                case '\n': key = KeyEvent.KEYCODE_ENTER; break;
+                case '.': key = KeyEvent.KEYCODE_PERIOD; break;
+                case ',': key = KeyEvent.KEYCODE_COMMA; break;
+                case ':': sendC64Key(KeyCode.C64KEY_COLON); return;
+                case ';': key = KeyEvent.KEYCODE_SEMICOLON; break;
+                case '"': key = KeyEvent.KEYCODE_APOSTROPHE; break;
+                case '*': key = KeyEvent.KEYCODE_STAR; break;
+                case '/': key = KeyEvent.KEYCODE_SLASH; break;
+                case '+': key = KeyEvent.KEYCODE_PLUS; break;
+                case '-': key = KeyEvent.KEYCODE_MINUS; break;
+                case '=': key = KeyEvent.KEYCODE_EQUALS; break;
+                default: return;
+            }
+        }
+        int code = KeyMap.translate(key);
+        if (code != -1) sendC64Key(code);
+    }
+
+    private List<InputDevice> connectedControllers() {
+        List<InputDevice> devices = new ArrayList<>();
+        for (int id : InputDevice.getDeviceIds()) {
+            InputDevice device = InputDevice.getDevice(id);
+            if (device == null) continue;
+            int sources = device.getSources();
+            if ((sources & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
+                    (sources & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK)
+                devices.add(device);
+        }
+        return devices;
+    }
+
+    private boolean hasConnectedController() {
+        return !connectedControllers().isEmpty();
+    }
+
+    private void showControllerDialog() {
+        List<InputDevice> devices = connectedControllers();
+        if (devices.isEmpty()) {
+            new AlertDialog.Builder(this).setTitle("No controller connected")
+                    .setMessage("Pair a Bluetooth controller or connect a USB controller, then return here to map its buttons.")
+                    .setPositiveButton("Bluetooth settings", (dialog, which) ->
+                            startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)))
+                    .setNegativeButton("Close", null).show();
+            return;
+        }
+        String[] names = new String[devices.size()];
+        for (int i = 0; i < names.length; i++) names[i] = devices.get(i).getName();
+        new AlertDialog.Builder(this).setTitle("Select controller")
+                .setItems(names, (dialog, which) -> showMappingDialog(devices.get(which)))
+                .setNegativeButton("Close", null).show();
+    }
+
+    private void showMappingDialog(InputDevice device) {
+        String[] labels = new String[ControllerBindings.ACTIONS.length];
+        for (int i = 0; i < labels.length; i++) {
+            int code = controllerBindings.get(device, i);
+            labels[i] = ControllerBindings.ACTIONS[i] + ": " +
+                    (code == KeyEvent.KEYCODE_UNKNOWN ? "Unassigned" : KeyEvent.keyCodeToString(code).replace("KEYCODE_", ""));
+        }
+        new AlertDialog.Builder(this).setTitle(device.getName() + " buttons")
+                .setItems(labels, (dialog, action) -> captureButton(device, action))
+                .setNeutralButton("Reset defaults", (dialog, which) -> {
+                    controllerBindings.clear(device);
+                    mappedStickMask = 0;
+                    gameController.init();
+                    emuControl.setStick(0);
+                    showMappingDialog(device);
+                }).setNegativeButton("Done", null).show();
+    }
+
+    private void captureButton(InputDevice device, int action) {
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Map " + ControllerBindings.ACTIONS[action])
+                .setMessage("Press a button on " + device.getName())
+                .setNegativeButton("Cancel", null).create();
+        dialog.setOnKeyListener((dismiss, code, event) -> {
+            if (event.getDeviceId() != device.getId() || event.getAction() != KeyEvent.ACTION_DOWN)
+                return false;
+            controllerBindings.set(device, action, code);
+            mappedStickMask = 0;
+            gameController.init();
+            emuControl.setStick(0);
+            dialog.dismiss();
+            showMappingDialog(device);
+            return true;
+        });
+        dialog.show();
+    }
+
+    private boolean handleMappedButton(KeyEvent event, InputDevice device) {
+        int code = event.getKeyCode();
+        boolean down = event.getAction() == KeyEvent.ACTION_DOWN;
+        int[] masks = {KeyCode.C64STICK_UP, KeyCode.C64STICK_DOWN,
+                KeyCode.C64STICK_LEFT, KeyCode.C64STICK_RIGHT, KeyCode.C64STICK_FIRE};
+        for (int i = 0; i < ControllerBindings.ACTIONS.length; i++) {
+            if (controllerBindings.get(device, i) != code) continue;
+            if (i < masks.length) {
+                if (down) mappedStickMask |= masks[i];
+                else mappedStickMask &= ~masks[i];
+                emuControl.setStick(mappedStickMask | (gameController.getState() & 0xff));
+            } else if (down) {
+                if (i == 5) setMenuVisible(swipeMenu.getVisibility() != View.VISIBLE);
+                if (i == 6) setKeyboardVisible(!isKeyboardVisible());
+            }
+            return true;
+        }
+        return true; // unmapped gamepad buttons must not type into the C64
+    }
+
+    @Override public void onInputDeviceAdded(int id) { updateTouchControls(); }
+    @Override public void onInputDeviceRemoved(int id) {
+        mappedStickMask = 0;
+        gameController.init();
+        emuControl.setStick(0);
+        updateTouchControls();
+    }
+    @Override public void onInputDeviceChanged(int id) { updateTouchControls(); }
 
     private void createKeyButtons() {
 
@@ -489,10 +787,10 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
         */
 
         if ((event.getSource() & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK && event.getAction() == MotionEvent.ACTION_MOVE) {
-            if (!isControlsVisible()) {
+            if (!isControlsVisible() && swipeMenu.getVisibility() != View.VISIBLE) {
                 if (gameController.handleEvent(event)) {
                     logger.info("update emu stick");
-                    emuControl.setStick(gameController.getState() & 0xff);
+                    emuControl.setStick((gameController.getState() & 0xff) | mappedStickMask);
                 }
                 return true;
             }
@@ -597,6 +895,19 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (swipeMenu != null && swipeMenu.getVisibility() == View.VISIBLE &&
+                event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) setMenuVisible(false);
+            return true;
+        }
+        InputDevice device = event.getDevice();
+        if (device != null && controllerBindings != null && controllerBindings.isCustomized(device)
+                && (((device.getSources() & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD) ||
+                    ((device.getSources() & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK))
+                && (event.getAction() == KeyEvent.ACTION_DOWN || event.getAction() == KeyEvent.ACTION_UP)) {
+            if (event.getRepeatCount() == 0) return handleMappedButton(event, device);
+            return true;
+        }
 
         if (isControlsVisible()) {
 
@@ -619,7 +930,7 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
                     if (gameController.handleEvent(event)) {
                         int stickMask = gameController.getState()&0xff;
                         logger.info("update emu stick mask: " + stickMask);
-                        emuControl.setStick(stickMask);
+                        emuControl.setStick(stickMask | mappedStickMask);
                     }
                 }
                 return true;
@@ -666,6 +977,7 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
         }
 
         updateScreenSize();
+        updateTouchControls();
 
     }
 
@@ -818,6 +1130,13 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
             return;
         }
 
+        if (diskImage.getType() == Image.TYPE_CARTRIDGE) {
+            setControlsVisible(false);
+            Toast.makeText(this, status ? "Inserted cartridge: " + diskImage.getName() :
+                    "Unsupported CRT cartridge (standard 8K/16K only)", Toast.LENGTH_LONG).show();
+            return;
+        }
+
         emuControl.keyInputDelay(20);
         emuControl.keyInput(KeySequence.sequence_Load_Asterisk_8_1_Run);
         setControlsVisible(false);
@@ -863,35 +1182,21 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
     }
 
     private void setKeyboardVisible(boolean visible) {
-
-        if (visible == keyboardVisible) {
-            // return;
-        }
-
-        logger.info("command: setKeyboardVisible(" + visible + ")");
-
         keyboardVisible = visible;
-
         InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
         if (imm == null) return;
-
         if (visible) {
-
-            logger.info("Show virtual keyboard");
-            imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0);
-
+            keyboardInput.requestFocus();
+            keyboardInput.post(() -> imm.showSoftInput(keyboardInput, InputMethodManager.SHOW_IMPLICIT));
         } else {
-            logger.info("Hide virtual keyboard");
-            imm.hideSoftInputFromWindow(emuView.getWindowToken(), 0);
+            imm.hideSoftInputFromWindow(keyboardInput.getWindowToken(), 0);
+            keyboardInput.clearFocus();
+            emuView.requestFocus();
         }
-
+        updateTouchControls();
     }
 
     private boolean isKeyboardVisible() {
-
-        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-
-        logger.info("VK: " + keyboardVisible + " / " + imm.isActive() + " / " + imm.isAcceptingText());
 
         return keyboardVisible;
 
@@ -941,6 +1246,7 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
 
     @Override
     protected void onPause() {
+        if (inputManager != null) inputManager.unregisterInputDeviceListener(this);
         super.onPause();
         logger.info("Activity.onPause()");
         emuControl.pause();
@@ -949,6 +1255,8 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
     @Override
     protected void onResume() {
         super.onResume();
+        if (inputManager != null) inputManager.registerInputDeviceListener(this, null);
+        updateTouchControls();
         logger.info("Activity.onResume()");
         if (isControlsVisible()) {
             emuControl.pause();

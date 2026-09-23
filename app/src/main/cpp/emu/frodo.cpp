@@ -107,6 +107,13 @@ extern "C" int emu_load(int data_type, const void* data, int data_size, const ch
 	    delete prefs;
 
     }
+    else if (FRODO_DATATYPE_CARTRIDGE == data_type)
+    {
+        if (TheC64->loadCartridge((const uint8*)data, data_size))
+            TheC64->Reset();
+        else
+            status = 1;
+    }
     else
     {
         status = 1;
@@ -144,6 +151,12 @@ extern "C" int emu_command(int command)
         case COMMAND_RESET:
         {
             // must be called within VBLANK!
+            TheC64->Reset();
+            break;
+        }
+        case COMMAND_EJECT_CARTRIDGE:
+        {
+            TheC64->cartridgeMode = 0;
             TheC64->Reset();
             break;
         }

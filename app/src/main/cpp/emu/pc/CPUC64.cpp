@@ -144,6 +144,8 @@ inline uint8 MOS6510::read_byte_io(uint16 adr)
 	switch (adr >> 12) {
 		case 0xa:
 		case 0xb:
+			if (the_c64->cartridgeMode == 2 && basic_in)
+				return the_c64->cartridgeHigh[adr & 0x1fff];
 			if (basic_in)
 				return basic_rom[adr & 0x1fff];
 			else
@@ -203,6 +205,8 @@ inline uint8 MOS6510::read_byte_io(uint16 adr)
 
 uint8 MOS6510::read_byte(uint16 adr)
 {
+	if (adr >= 0x8000 && adr < 0xa000 && the_c64->cartridgeMode)
+		return the_c64->cartridgeLow[adr & 0x1fff];
 	if (adr < 0xa000)
 		return ram[adr];
 	else
@@ -253,10 +257,14 @@ inline uint16 MOS6510::read_word(uint16 adr)
 		case 0x7:
 		case 0x8:
 		case 0x9:
+			if (the_c64->cartridgeMode)
+				return read_byte(adr) | (read_byte(adr+1) << 8);
 			return *(uint16*)&ram[adr];
 			break;
 		case 0xa:
 		case 0xb:
+			if (the_c64->cartridgeMode == 2 && basic_in)
+				return read_byte(adr) | (read_byte(adr+1) << 8);
 			if (basic_in)
 				return *(uint16*)&basic_rom[adr & 0x1fff];
 			else
