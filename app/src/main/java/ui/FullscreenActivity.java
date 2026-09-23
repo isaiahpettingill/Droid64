@@ -4,7 +4,6 @@ import android.content.Intent;
 import android.annotation.TargetApi;
 import android.app.ActivityManager;
 import android.content.Context;
-import android.content.pm.ActivityInfo;
 import android.content.pm.ConfigurationInfo;
 import android.net.Uri;
 import android.os.Bundle;
@@ -173,8 +172,6 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
         keyboardVisible = false;
 
         checkOpenGL();
-
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
 
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
@@ -515,14 +512,8 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
 
         if (0 != receivedWidth && 0 != receivedHeight) {
 
-            // check for rotation
-            if (receivedWidth > receivedHeight) {
-                screenWidth = receivedWidth;
-                screenHeight = receivedHeight;
-            } else {
-                screenWidth = receivedHeight;
-                screenHeight = receivedWidth;
-            }
+            screenWidth = receivedWidth;
+            screenHeight = receivedHeight;
         }
 
     }
