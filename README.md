@@ -16,9 +16,7 @@ Some facts:
 Download
 ---------
 
-Download this fork's Android builds at
-
-https://github.com/isaiahpettingill/Droid64/releases
+Download the latest signed APK from [GitHub Releases](https://github.com/isaiahpettingill/Droid64/releases/latest).
 
 Android 16 and arm64 builds include a native `arm64-v8a` library. To add a
 disk image, open Select Disk, choose **Import disk or archive**, pick a D64,
@@ -41,23 +39,32 @@ To build against another installed platform, pass `-PandroidCompileSdk=36`.
 
 ## Automatic releases
 
-The GitHub Actions workflow builds on pushes and pull requests. On the first
-day of each month it detects the newest stable Android API, builds the APK,
-launches it in an emulator for that API, and publishes a release named
-`android-<API>-v1.1.0` if that release does not already exist. Pushing a
-`v*` tag or starting the workflow manually also publishes a signed release.
+The GitHub Actions workflow builds on pushes and pull requests. On pushes to
+`master` and the first day of each month, it detects the newest stable Android
+API when scheduled, builds the APK, launches it in an emulator, and publishes
+a signed release linked above. A manual run or a `v*` tag also publishes.
+For commits on `master`, release tags include the Android API and commit SHA;
+rerunning the same commit does not duplicate a release.
 If a build or emulator smoke test fails, no release is published.
 
-To enable signed releases, set these GitHub repository Actions secrets using
-one persistent Android signing key:
+To enable signed releases, run this **once** on your machine with GitHub CLI,
+JDK `keytool`, and OpenSSL installed (and `gh auth login` completed):
+
+```sh
+bash scripts/setup-signing.sh
+```
+
+The script creates a private signing key in `~/droid64-signing`, uploads the
+following four repository Actions secrets, and starts the first release run:
 
 - `DROID64_KEYSTORE_B64`: base64 encoding of the keystore (`base64 -w0 your-key.jks`)
 - `DROID64_STORE_PASSWORD`: keystore password
 - `DROID64_KEY_ALIAS`: key alias
 - `DROID64_KEY_PASSWORD`: key password
 
-Keep the keystore backed up. Replacing it prevents APK updates over earlier
-releases. CI always uploads a debug APK as a workflow artifact; its temporary
+Back up `~/droid64-signing` securely: replacing the keystore prevents updates
+over earlier signed releases. Neither the key nor passwords are committed to
+Git. CI always uploads a debug APK as a workflow artifact; its temporary
 debug signature is not stable between runner instances. Android API releases
 increase the APK version code by one per API level. Functional use on a Pixel 8
 should still be checked on the device before treating an emulator smoke test as

@@ -75,7 +75,7 @@ jobs:
             adb shell pidof org.codewiz.droid64
             if adb logcat -d -v brief | grep -q 'FATAL EXCEPTION'; then echo 'App crashed during startup'; exit 1; fi
       - name: Check release credentials
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name != 'pull_request'
         env:
           KEYSTORE_B64: ${{ secrets.DROID64_KEYSTORE_B64 }}
           STORE_PASSWORD: ${{ secrets.DROID64_STORE_PASSWORD }}
@@ -87,7 +87,7 @@ jobs:
             exit 1
           fi
       - name: Build signed release
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name != 'pull_request'
         env:
           KEYSTORE_B64: ${{ secrets.DROID64_KEYSTORE_B64 }}
           DROID64_STORE_PASSWORD: ${{ secrets.DROID64_STORE_PASSWORD }}
@@ -102,7 +102,7 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose app/build/outputs/apk/release/app-release.apk
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 app/build/outputs/apk/release/app-release.apk
       - name: Publish GitHub release
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           API: ${{ steps.platform.outputs.api }}
@@ -112,7 +112,7 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             tag=${GITHUB_REF#refs/tags/}
           else
-            tag="android-${API}-v1.1.0"
+            tag="android-${API}-v1.2.0-${GITHUB_SHA:0:7}"
           fi
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag already exists"
