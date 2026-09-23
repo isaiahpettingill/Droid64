@@ -54,6 +54,7 @@ jobs:
           name: Droid64-debug-api-${{ steps.platform.outputs.api }}
           path: app/build/outputs/apk/debug/app-debug.apk
       - name: Smoke test in Android emulator
+        timeout-minutes: 15
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ steps.platform.outputs.api }}
@@ -61,8 +62,10 @@ jobs:
           profile: pixel_6
           script: |
             adb install app/build/outputs/apk/debug/app-debug.apk
+            adb logcat -c
             adb shell am start -n org.codewiz.droid64/ui.FullscreenActivity
             sleep 15
+            adb logcat -d -v brief | grep -E 'AndroidRuntime|FATAL EXCEPTION|org.codewiz.droid64|libDroid64|linker' | tail -100 || true
             adb shell pidof org.codewiz.droid64
       - name: Check release credentials
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
