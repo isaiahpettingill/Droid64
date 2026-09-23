@@ -25,4 +25,6 @@ for _ in range(8):
         print("Android soft keyboard appeared")
         break
 else:
+    print("Visible packages:", sorted({node.get("package", "") for node in hierarchy.iter()}))
+    print("Input method state:", adb("shell", "dumpsys", "input_method")[-5000:])
     raise SystemExit("Android soft keyboard did not appear")
