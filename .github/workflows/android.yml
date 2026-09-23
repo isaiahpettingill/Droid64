@@ -67,6 +67,7 @@ jobs:
             adb logcat -c
             adb shell settings put system accelerometer_rotation 0
             adb shell settings put system user_rotation 0
+            adb shell settings put secure show_ime_with_hard_keyboard 1
             adb shell am start -n org.codewiz.droid64/ui.FullscreenActivity
             sleep 15
             adb shell input swipe 150 60 150 500 300
@@ -74,6 +75,7 @@ jobs:
             adb shell cat /sdcard/window.xml | grep -o 'text="[^"]*"' | head -30 || true
             adb logcat -d -v brief | grep -E 'FATAL EXCEPTION|AndroidRuntime|FullscreenActivity' | tail -30 || true
             adb shell cat /sdcard/window.xml | grep -q 'Insert cartridge'
+            python3 scripts/check-keyboard.py
             adb shell input keyevent BACK
             adb shell settings put system user_rotation 1
             sleep 5
