@@ -53,6 +53,8 @@ jobs:
         with:
           name: Droid64-debug-api-${{ steps.platform.outputs.api }}
           path: app/build/outputs/apk/debug/app-debug.apk
+      - name: Enable emulator acceleration
+        run: sudo chmod 666 /dev/kvm
       - name: Smoke test in Android emulator
         timeout-minutes: 15
         uses: reactivecircus/android-emulator-runner@v2
