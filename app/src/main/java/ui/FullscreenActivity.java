@@ -450,7 +450,7 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
                 return view.onApplyWindowInsets(insets);
             });
         }
-        FrameLayout viewFrame = findViewById(R.id.emuViewFrame);
+        FrameLayout viewFrame = (FrameLayout) emuView;
 
         keyboardInput = new EditText(this);
         keyboardInput.setAlpha(0);
