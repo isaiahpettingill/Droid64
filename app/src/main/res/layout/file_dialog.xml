@@ -15,6 +15,12 @@
         android:onClick="onClickScan"
         android:text="Re-Scan Disks" />
 
+    <Button
+        android:id="@+id/buttonImport"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Import disk or archive" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"

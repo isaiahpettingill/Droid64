@@ -1,0 +1,113 @@
+name: Android build and release
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 8 1 * *'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Select stable Android platform
+        id: platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == schedule || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            api=$(sdkmanager --list --channel=0 | sed -nE 's/^[[:space:]]*platforms;android-([0-9]+)[[:space:]]*\|.*/\1/p' | sort -n | tail -1)
+            test -n "$api"
+          else
+            api=35
+          fi
+          echo "api=$api" >> "$GITHUB_OUTPUT"
+          sdkmanager "platforms;android-$api" 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug -PandroidCompileSdk=${{ steps.platform.outputs.api }} --no-daemon
+      - name: Check native architectures
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/debug/app-debug.apk
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            unzip -l "$apk" "lib/$abi/libDroid64.so" | grep -q "lib/$abi/libDroid64.so"
+          done
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -E 'package:|sdkVersion:|targetSdkVersion:'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Droid64-debug-api-${{ steps.platform.outputs.api }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+      - name: Smoke test in Android emulator
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ steps.platform.outputs.api }}
+          arch: x86_64
+          profile: pixel_6
+          script: |
+            adb install app/build/outputs/apk/debug/app-debug.apk
+            adb shell am start -n org.codewiz.droid64/ui.FullscreenActivity
+            sleep 15
+            adb shell pidof org.codewiz.droid64
+      - name: Check release credentials
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        env:
+          KEYSTORE_B64: ${{ secrets.DROID64_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.DROID64_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.DROID64_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.DROID64_KEY_PASSWORD }}
+        run: |
+          if [[ -z "$KEYSTORE_B64" || -z "$STORE_PASSWORD" || -z "$KEY_ALIAS" || -z "$KEY_PASSWORD" ]]; then
+            echo 'Set DROID64_KEYSTORE_B64, DROID64_STORE_PASSWORD, DROID64_KEY_ALIAS, and DROID64_KEY_PASSWORD repository secrets.' >&2
+            exit 1
+          fi
+      - name: Build signed release
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        env:
+          KEYSTORE_B64: ${{ secrets.DROID64_KEYSTORE_B64 }}
+          DROID64_STORE_PASSWORD: ${{ secrets.DROID64_STORE_PASSWORD }}
+          DROID64_KEY_ALIAS: ${{ secrets.DROID64_KEY_ALIAS }}
+          DROID64_KEY_PASSWORD: ${{ secrets.DROID64_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DROID64_KEYSTORE="$RUNNER_TEMP/droid64-release.jks"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$DROID64_KEYSTORE"
+          ./gradlew :app:assembleRelease -PandroidCompileSdk=${{ steps.platform.outputs.api }} --no-daemon
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 app/build/outputs/apk/release/app-release.apk
+      - name: Publish GitHub release
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          API: ${{ steps.platform.outputs.api }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag=${GITHUB_REF#refs/tags/}
+          else
+            tag="android-${API}-v1.1.0"
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists"
+            exit 0
+          fi
+          cp app/build/outputs/apk/release/app-release.apk "Droid64-${tag}.apk"
+          gh release create "$tag" "Droid64-${tag}.apk" --target "$GITHUB_SHA" --title "Droid64 $tag" --notes "Signed APK for Android API $API and newer; includes arm64-v8a, armeabi-v7a, and x86_64. Import disk images using Select Disk → Import disk or archive."

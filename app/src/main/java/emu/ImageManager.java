@@ -13,6 +13,10 @@ import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.InputStream;
+import android.net.Uri;
+import android.database.Cursor;
+import android.provider.OpenableColumns;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -91,7 +95,7 @@ public class ImageManager {
 
 		} else {
 
-			File baseDir = Environment.getDataDirectory();
+			File baseDir = context.getFilesDir();
 
 			if (null == baseDir) {
 				logger.warning("could not find location to store snapshots");
@@ -101,7 +105,7 @@ public class ImageManager {
 			snapshotDir = new File(baseDir, "droid64");
 		}
 
-		if (snapshotDir.isFile()) {
+		if (snapshotDir == null || snapshotDir.isFile()) {
 			return null;
 		}
 
@@ -128,6 +132,11 @@ public class ImageManager {
 	}
 
 	private String[] getStorageDirs() {
+		if (android.os.Build.VERSION.SDK_INT >= 29) {
+			File external = context.getExternalFilesDir(null);
+			return external == null ? new String[] { context.getFilesDir().getAbsolutePath() }
+				: new String[] { external.getAbsolutePath(), context.getFilesDir().getAbsolutePath() };
+		}
 
 		StringBuilder paths = new StringBuilder();
 
@@ -178,9 +187,41 @@ public class ImageManager {
 			}
 
 		}
+		scan(new File(context.getFilesDir(), "Imported").getAbsolutePath());
 
 		dirty = false;
 
+	}
+
+	/** Copy a user-selected document into private storage so the existing emulator can use its path. */
+	public boolean importDocument(Uri uri) {
+		if (context == null || uri == null) return false;
+		String name = null;
+		try (Cursor cursor = context.getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+			if (cursor != null && cursor.moveToFirst()) name = cursor.getString(0);
+		} catch (RuntimeException e) {
+			logger.warning("Cannot read document name: " + e.getMessage());
+		}
+		if (name == null) return false;
+		name = new File(name).getName();
+		String extension = getFileExtension(name);
+		if (!(isValidExtension(extension) || "zip".equals(extension))) return false;
+		File dir = new File(context.getFilesDir(), "Imported");
+		if (!dir.isDirectory() && !dir.mkdirs()) return false;
+		File dest = new File(dir, name);
+		try (InputStream input = context.getContentResolver().openInputStream(uri);
+			 OutputStream output = new FileOutputStream(dest)) {
+			if (input == null) return false;
+			byte[] buffer = new byte[8192];
+			int count;
+			while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+			invalidateList();
+			return true;
+		} catch (IOException | SecurityException e) {
+			dest.delete();
+			logger.warning("Cannot import document: " + e.getMessage());
+			return false;
+		}
 	}
 
 	private void scan(String folderName) {
@@ -236,7 +277,8 @@ public class ImageManager {
 
 
 		Preferences prefs = Preferences.instance();
-		final boolean scanZipFiles = (null != prefs) ? prefs.isZipScanEnabled() : false;
+		final boolean scanZipFiles = folder.equals(new File(context.getFilesDir(), "Imported"))
+				|| (null != prefs && prefs.isZipScanEnabled());
 
 		File[] files = folder.listFiles(new FilenameFilter() {
 			@Override
