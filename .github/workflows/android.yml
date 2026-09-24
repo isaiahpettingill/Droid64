@@ -121,7 +121,9 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             tag=${GITHUB_REF#refs/tags/}
           else
-            tag="android-${API}-v1.3.0-${GITHUB_SHA:0:7}"
+            version=$(sed -nE "s/^[[:space:]]*versionName[[:space:]]+'([^']+)'.*/\\1/p" app/build.gradle | head -n 1)
+            test -n "$version"
+            tag="android-${API}-v${version}-${GITHUB_SHA:0:7}"
           fi
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag already exists"
