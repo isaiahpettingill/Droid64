@@ -17,7 +17,8 @@ import java.util.zip.ZipFile;
 public class Image {
 
     private final static Logger logger = LogManager.getLogger(Image.class.getName());
-    private static final int MAX_IMAGE_SIZE = 174848; // 174Kbytes max disk size
+    private static final int MAX_DISK_IMAGE_SIZE = 174848;
+    private static final int MAX_CARTRIDGE_IMAGE_SIZE = 2 * 1024 * 1024;
 
     public static final int TYPE_SNAPSHOT = 1;
     public static final int TYPE_DISK = 2;
@@ -124,8 +125,8 @@ public class Image {
 
             long fileSize = file.length();
 
-            if (fileSize > MAX_IMAGE_SIZE) {
-                logger.error("invalid disk image");
+            if (fileSize <= 0 || fileSize > (type == TYPE_CARTRIDGE ? MAX_CARTRIDGE_IMAGE_SIZE : MAX_DISK_IMAGE_SIZE)) {
+                logger.error("invalid image size: " + fileSize);
                 return null;
             }
 
@@ -133,10 +134,13 @@ public class Image {
 
             byte[] buffer = new byte[bufferSize];
 
-            InputStream is = new FileInputStream(filename);
-
-            int bytesRead = is.read(buffer, 0, bufferSize);
-            if (bytesRead == bufferSize) {
+            try (InputStream is = new FileInputStream(filename)) {
+                int offset = 0;
+                while (offset < bufferSize) {
+                    int count = is.read(buffer, offset, bufferSize - offset);
+                    if (count < 0) return null;
+                    offset += count;
+                }
                 return buffer;
             }
 
@@ -162,8 +166,8 @@ public class Image {
 
             long fileSize = entry.getSize();
 
-            if (fileSize > MAX_IMAGE_SIZE) {
-                logger.error("invalid disk image in zip file");
+            if (fileSize <= 0 || fileSize > (type == TYPE_CARTRIDGE ? MAX_CARTRIDGE_IMAGE_SIZE : MAX_DISK_IMAGE_SIZE)) {
+                logger.error("invalid image size in zip file: " + fileSize);
                 return null;
             }
 

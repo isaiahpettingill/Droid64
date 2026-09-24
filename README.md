@@ -28,10 +28,12 @@ The app supports both portrait and landscape. On devices without the optional
 Android reverb effect, sound continues without reverb instead of crashing at
 startup.
 
-Swipe down from the top of the C64 screen or tap **↓ Menu** to insert a D64 disk,
-T64 tape, or standard 8K/16K CRT cartridge, open the Android keyboard, or map
-controller buttons. The menu also offers **Load and run** for disk and tape
-images. CRT cartridges with bank switching or special hardware are rejected.
+Swipe down from the upper-left corner of the C64 screen to open the hidden menu
+for D64 disks, T64 tapes, CRT cartridges, the Android keyboard, and controller
+mapping. The menu also offers **Load and run** for disk and tape images.
+Standard 8K/16K, Ocean, and EasyFlash CRT cartridges are supported; other
+cartridge hardware types are rejected. The keyboard has a scrollable row of
+C64 cursor keys, Delete, Return, function keys, Run/Stop, and Commodore.
 The on-screen joystick and fire button appear when no controller is connected
 and the keyboard is hidden. Plug in a USB controller or pair a Bluetooth
 controller through Android, then use **Connect / map controller** to assign

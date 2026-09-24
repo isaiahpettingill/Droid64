@@ -8,6 +8,7 @@ import android.content.DialogInterface;
 import android.content.Context;
 import android.content.pm.ConfigurationInfo;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.hardware.input.InputManager;
 import android.net.Uri;
 import android.os.Bundle;
@@ -29,13 +30,15 @@ import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
+import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputConnectionWrapper;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import org.codewiz.droid64.R;
@@ -137,6 +140,7 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
     private View swipeMenu;
     private TouchControlsView touchControls;
     private EditText keyboardInput;
+    private View keyboardRow;
     private boolean clearingKeyboardInput;
     private boolean touchControlsEnabled;
     private ControllerBindings controllerBindings;
@@ -183,7 +187,7 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
             } else {
                 boolean inserted = emuControl.attachDisk(image);
                 Toast.makeText(this, inserted ? "Inserted " + image.getName() :
-                        "Unsupported image (cartridges require a standard 8K/16K CRT)", Toast.LENGTH_LONG).show();
+                        "Unsupported cartridge (supports standard, Ocean, EasyFlash CRT)", Toast.LENGTH_LONG).show();
             }
         }
     }
@@ -436,12 +440,41 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
                     keyboardVisible = shown;
                     updateTouchControls();
                 }
+                if (shown) view.post(this::positionKeyboardRow);
                 return view.onApplyWindowInsets(insets);
             });
         }
         FrameLayout viewFrame = (FrameLayout) emuView;
 
-        keyboardInput = new EditText(this);
+        keyboardInput = new EditText(this) {
+            @Override public InputConnection onCreateInputConnection(EditorInfo info) {
+                InputConnection connection = super.onCreateInputConnection(info);
+                if (connection == null) return null;
+                return new InputConnectionWrapper(connection, false) {
+                    @Override public boolean deleteSurroundingText(int before, int after) {
+                        if (before > 0) {
+                            for (int i = 0; i < Math.min(before, 32); i++) sendC64Key(KeyCode.C64KEY_INSTDEL);
+                            return true;
+                        }
+                        return super.deleteSurroundingText(before, after);
+                    }
+                    @Override public boolean deleteSurroundingTextInCodePoints(int before, int after) {
+                        if (before > 0) {
+                            for (int i = 0; i < Math.min(before, 32); i++) sendC64Key(KeyCode.C64KEY_INSTDEL);
+                            return true;
+                        }
+                        return super.deleteSurroundingTextInCodePoints(before, after);
+                    }
+                    @Override public boolean sendKeyEvent(KeyEvent event) {
+                        if (event.getKeyCode() == KeyEvent.KEYCODE_DEL) {
+                            if (event.getAction() == KeyEvent.ACTION_DOWN) sendC64Key(KeyCode.C64KEY_INSTDEL);
+                            return true;
+                        }
+                        return super.sendKeyEvent(event);
+                    }
+                };
+            }
+        };
         keyboardInput.setAlpha(0);
         keyboardInput.setSingleLine(true);
         keyboardInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -498,18 +531,56 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
         addMenuButton(menu, "Connect / map controller", v -> { setMenuVisible(false); showControllerDialog(); });
         addMenuButton(menu, "More controls", v -> { setMenuVisible(false); setControlsVisible(true); });
         addMenuButton(menu, "Close menu", v -> setMenuVisible(false));
-        FrameLayout.LayoutParams menuParams = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
+        FrameLayout.LayoutParams menuParams = new FrameLayout.LayoutParams(dp(300), -2, Gravity.TOP | Gravity.LEFT);
         menuParams.bottomMargin = dp(50);
         contentFrame.addView(scroll, menuParams);
-        // A visible grab handle makes the swipe gesture discoverable.
-        TextView handle = new TextView(this);
-        handle.setText("↓ Menu");
-        handle.setTextColor(Color.WHITE);
-        handle.setBackgroundColor(Color.argb(170, 25, 29, 39));
-        handle.setGravity(Gravity.CENTER);
-        handle.setOnClickListener(v -> setMenuVisible(swipeMenu.getVisibility() != View.VISIBLE));
-        contentFrame.addView(handle, new FrameLayout.LayoutParams(dp(100), dp(42), Gravity.TOP | Gravity.CENTER_HORIZONTAL));
+
+        HorizontalScrollView row = new HorizontalScrollView(this);
+        row.setBackgroundColor(Color.rgb(25, 29, 39));
+        row.setHorizontalScrollBarEnabled(false);
+        row.setVisibility(View.GONE);
+        keyboardRow = row;
+        LinearLayout keys = new LinearLayout(this);
+        row.addView(keys);
+        addKeyboardKey(keys, "RUN/STOP", KeyCode.C64KEY_RUNSTOP);
+        addKeyboardKey(keys, "C=", KeyCode.C64KEY_COMMODORE);
+        addKeyboardKey(keys, "←", KeyCode.C64KEY_CRSR_LEFTRIGHT | KeyCode.C64KEY_FLAG_SHIFT);
+        addKeyboardKey(keys, "↑", KeyCode.C64KEY_CRSR_UPDOWN | KeyCode.C64KEY_FLAG_SHIFT);
+        addKeyboardKey(keys, "↓", KeyCode.C64KEY_CRSR_UPDOWN);
+        addKeyboardKey(keys, "→", KeyCode.C64KEY_CRSR_LEFTRIGHT);
+        addKeyboardKey(keys, "DEL", KeyCode.C64KEY_INSTDEL);
+        addKeyboardKey(keys, "RETURN", KeyCode.C64KEY_RETURN);
+        addKeyboardKey(keys, "F1", KeyCode.C64KEY_F1F2);
+        addKeyboardKey(keys, "F3", KeyCode.C64KEY_F3F4);
+        addKeyboardKey(keys, "F5", KeyCode.C64KEY_F5F6);
+        addKeyboardKey(keys, "F7", KeyCode.C64KEY_F7F8);
+        contentFrame.addView(row, new FrameLayout.LayoutParams(-1, dp(44), Gravity.BOTTOM));
         updateTouchControls();
+    }
+
+    private void addKeyboardKey(LinearLayout row, String label, int code) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setTextSize(12);
+        button.setAllCaps(false);
+        button.setFocusable(false);
+        button.setFocusableInTouchMode(false);
+        button.setOnClickListener(v -> sendC64Key(code));
+        row.addView(button, new LinearLayout.LayoutParams(-2, dp(44)));
+    }
+
+    private void positionKeyboardRow() {
+        if (keyboardRow == null || !keyboardVisible) return;
+        Rect visible = new Rect();
+        contentFrame.getWindowVisibleDisplayFrame(visible);
+        int[] origin = new int[2];
+        contentFrame.getLocationOnScreen(origin);
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) keyboardRow.getLayoutParams();
+        int margin = Math.max(0, origin[1] + contentFrame.getHeight() - visible.bottom);
+        if (params.bottomMargin != margin) {
+            params.bottomMargin = margin;
+            keyboardRow.setLayoutParams(params);
+        }
     }
 
     private void setMenuVisible(boolean visible) {
@@ -527,6 +598,10 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
                 swipeMenu.getVisibility() != View.VISIBLE && !hasConnectedController() && !isControlsVisible();
         if (!visible) touchControls.clearInput();
         touchControls.setVisibility(visible ? View.VISIBLE : View.GONE);
+        if (keyboardRow != null) {
+            keyboardRow.setVisibility(keyboardVisible ? View.VISIBLE : View.GONE);
+            if (keyboardVisible) keyboardRow.post(this::positionKeyboardRow);
+        }
     }
 
     @Override
@@ -536,8 +611,10 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
             int[] origin = new int[2];
             contentFrame.getLocationOnScreen(origin);
             float y = event.getRawY() - origin[1];
+            float x = event.getRawX() - origin[0];
             swipeStartY = event.getRawY();
-            swipeFromTop = y >= 0 && y < dp(72) && swipeMenu.getVisibility() != View.VISIBLE;
+            swipeFromTop = x >= 0 && x < dp(120) && y >= 0 && y < dp(72) &&
+                    swipeMenu.getVisibility() != View.VISIBLE;
             swipeConsumed = false;
         } else if (action == MotionEvent.ACTION_MOVE && swipeFromTop &&
                 event.getRawY() - swipeStartY > dp(55)) {

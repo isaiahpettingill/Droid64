@@ -15,6 +15,8 @@
 #include "1541job.h"
 #include "Prefs.h"
 #include "Input.h"
+#include <cstdint>
+#include <vector>
 
 // ROM file names
 #define BASIC_ROM_FILE	"resources/Basic.ROM"
@@ -160,8 +162,11 @@ C64::C64()
     diskImageBuffer = NULL;
     diskImageSize = 0;
     cartridgeMode = 0;
+    cartridgeType = 0;
+    cartridgeBank = cartridgeControl = 0;
     memset(cartridgeLow, 0xff, sizeof(cartridgeLow));
     memset(cartridgeHigh, 0xff, sizeof(cartridgeHigh));
+    memset(cartridgeRam, 0, sizeof(cartridgeRam));
 }
 
 static uint32_t cartridgeBE32(const uint8* p)
@@ -171,20 +176,21 @@ static uint32_t cartridgeBE32(const uint8* p)
 
 bool C64::loadCartridge(const uint8* data, int size)
 {
-    // CRT format: 64-byte header followed by CHIP packets. Refuse banked
-    // cartridges and partial ROMs rather than silently running the wrong game.
+    // CRT format: 64-byte header followed by CHIP packets. Keep bank images
+    // separate so writes to the cartridge's IO1 registers select the next ROM.
     if (!data || size < 0x40 || memcmp(data, "C64 CARTRIDGE   ", 16) != 0)
         return false;
     uint32_t header = cartridgeBE32(data + 0x10);
-    if (header < 0x40 || header > uint32_t(size) || data[0x16] != 0 || data[0x17] != 0)
+    int type = (data[0x16] << 8) | data[0x17];
+    if (header < 0x40 || header > uint32_t(size) ||
+        (type != 0 && type != 5 && type != 32))
         return false;
     int mode = (data[0x18] == 0 && data[0x19] == 0) ? 2 :
-               (data[0x18] == 0 && data[0x19] == 1) ? 1 : 0;
+               (data[0x18] == 0 && data[0x19] == 1) ? 1 :
+               (data[0x18] == 1 && data[0x19] == 0) ? 3 : 0;
     if (!mode) return false;
-    uint8 low[8192], high[8192];
-    memset(low, 0xff, sizeof(low));
-    memset(high, 0xff, sizeof(high));
-    bool haveLow = false, haveHigh = false;
+    std::vector<uint8> low(sizeof(cartridgeLow), 0xff), high(sizeof(cartridgeHigh), 0xff);
+    bool haveLow[64] = {}, haveHigh[64] = {};
     for (uint32_t at = header; at < uint32_t(size); ) {
         if (uint32_t(size) - at < 0x10 || memcmp(data + at, "CHIP", 4) != 0)
             return false;
@@ -192,28 +198,64 @@ bool C64::loadCartridge(const uint8* data, int size)
         int bank = (data[at + 0x0a] << 8) | data[at + 0x0b];
         int address = (data[at + 0x0c] << 8) | data[at + 0x0d];
         int bytes = (data[at + 0x0e] << 8) | data[at + 0x0f];
-        if (length < 0x10 || length > uint32_t(size) - at || bank != 0 ||
+        int chipType = (data[at + 8] << 8) | data[at + 9];
+        if (length < 0x10 || length > uint32_t(size) - at || bank >= 64 ||
+            (type == 0 && bank != 0) ||
             (bytes != 8192 && bytes != 16384) || length != uint32_t(bytes + 0x10) ||
-            (data[at + 8] | data[at + 9]) != 0)
+            (chipType != 0 && !(type == 32 && chipType == 2)))
             return false;
-        if (address == 0x8000 && !haveLow && (bytes == 8192 || mode == 2)) {
-            memcpy(low, data + at + 0x10, 8192);
-            haveLow = true;
+        if (address == 0x8000 && !haveLow[bank]) {
+            memcpy(&low[bank * 8192], data + at + 0x10, 8192);
+            haveLow[bank] = true;
             if (bytes == 16384) {
-                memcpy(high, data + at + 0x10 + 8192, 8192);
-                haveHigh = true;
+                memcpy(&high[bank * 8192], data + at + 0x10 + 8192, 8192);
+                haveHigh[bank] = true;
             }
-        } else if (address == 0xa000 && mode == 2 && !haveHigh) {
-            memcpy(high, data + at + 0x10, 8192);
-            haveHigh = true;
+        } else if ((address == 0xa000 || (address == 0xe000 && mode == 3)) &&
+                   bytes == 8192 && !haveHigh[bank]) {
+            memcpy(&high[bank * 8192], data + at + 0x10, 8192);
+            haveHigh[bank] = true;
         } else return false;
         at += length;
     }
-    if (!haveLow || (mode == 2 && !haveHigh)) return false;
-    memcpy(cartridgeLow, low, sizeof(low));
-    memcpy(cartridgeHigh, high, sizeof(high));
+    if (!haveLow[0] || ((type == 0 && mode != 1) || type == 32) && !haveHigh[0])
+        return false;
+    memcpy(cartridgeLow, low.data(), low.size());
+    memcpy(cartridgeHigh, high.data(), high.size());
+    memset(cartridgeRam, 0, sizeof(cartridgeRam));
+    cartridgeType = type;
+    cartridgeBank = cartridgeControl = 0;
     cartridgeMode = mode;
     return true;
+}
+
+void C64::ejectCartridge()
+{
+    cartridgeMode = cartridgeType = 0;
+    cartridgeBank = cartridgeControl = 0;
+}
+
+void C64::cartridgeWrite(uint16 address, uint8 value)
+{
+    if (cartridgeType == 5 && address >= 0xde00 && address <= 0xdeff) {
+        cartridgeBank = value & 0x3f;
+    } else if (cartridgeType == 32 && address >= 0xde00 && address <= 0xdeff) {
+        if ((address & 2) == 0) cartridgeBank = value & 0x3f;
+        else {
+            cartridgeControl = value & 7;
+            static const uint8 modes[8] = {3, 3, 1, 1, 2, 3, 0, 1};
+            cartridgeMode = modes[cartridgeControl];
+        }
+    } else if (cartridgeType == 32 && address >= 0xdf00 && address <= 0xdfff) {
+        cartridgeRam[address & 0xff] = value;
+    }
+}
+
+uint8 C64::cartridgeRead(uint16 address) const
+{
+    if (cartridgeType == 32 && address >= 0xdf00 && address <= 0xdfff)
+        return cartridgeRam[address & 0xff];
+    return 0xff;
 }
 
 

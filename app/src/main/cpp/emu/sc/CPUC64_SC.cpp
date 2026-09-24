@@ -207,7 +207,7 @@ inline uint8 MOS6510::read_byte_io(uint16 adr)
 		case 0xa:
 		case 0xb:
 			if (the_c64->cartridgeMode == 2 && basic_in)
-				return the_c64->cartridgeHigh[adr & 0x1fff];
+				return the_c64->cartridgeHigh[the_c64->cartridgeBank][adr & 0x1fff];
 			if (basic_in)
 				return basic_rom[adr & 0x1fff];
 			else
@@ -238,6 +238,8 @@ inline uint8 MOS6510::read_byte_io(uint16 adr)
 						return TheCIA2->ReadRegister(adr & 0x0f);
 					case 0xe:	// REU/Open I/O
 					case 0xf:
+						if (the_c64->cartridgeType == 32 && adr >= 0xdf00)
+							return the_c64->cartridgeRead(adr);
 						if ((adr & 0xfff0) == 0xdf00)
 							return TheREU->ReadRegister(adr & 0x0f);
 						else if (adr < 0xdfa0)
@@ -251,6 +253,8 @@ inline uint8 MOS6510::read_byte_io(uint16 adr)
 				return ram[adr];
 		case 0xe:
 		case 0xf:
+			if (the_c64->cartridgeMode == 3)
+				return the_c64->cartridgeHigh[the_c64->cartridgeBank][adr & 0x1fff];
 			if (kernal_in)
 				return kernal_rom[adr & 0x1fff];
 			else
@@ -271,7 +275,7 @@ inline
 uint8 MOS6510::read_byte(uint16 adr)
 {
 	if (adr >= 0x8000 && adr < 0xa000 && the_c64->cartridgeMode)
-		return the_c64->cartridgeLow[adr & 0x1fff];
+		return the_c64->cartridgeLow[the_c64->cartridgeBank][adr & 0x1fff];
 	if (adr < 0xa000) {
 		if (adr >= 2)
 			return ram[adr];
@@ -324,6 +328,11 @@ inline uint16 MOS6510::read_word(uint16 adr)
 
 inline void MOS6510::write_byte_io(uint16 adr, uint8 byte)
 {
+	if (io_in && ((adr >= 0xde00 && adr <= 0xdeff && the_c64->cartridgeType) ||
+	              (adr >= 0xdf00 && adr <= 0xdfff && the_c64->cartridgeType == 32))) {
+		the_c64->cartridgeWrite(adr, byte);
+		return;
+	}
 	if (adr >= 0xe000) {
 		ram[adr] = byte;
 		if (adr == 0xff00)
