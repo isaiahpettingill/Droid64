@@ -123,10 +123,15 @@ class C64 {
         int diskImageSize;
 
     public:
-        // Only standard, fixed 8K and 16K ROM cartridges are supported.
-        uint8 cartridgeLow[8192], cartridgeHigh[8192];
-        int cartridgeMode; // 0=none, 1=8K, 2=16K
+        uint8 cartridgeLow[64][8192], cartridgeHigh[64][8192];
+        uint8 cartridgeRam[256];
+        int cartridgeMode; // 0=none, 1=8K, 2=16K, 3=Ultimax
+        int cartridgeType; // CRT hardware ID: 0=standard, 5=Ocean, 32=EasyFlash
+        uint8 cartridgeBank, cartridgeControl;
         bool loadCartridge(const uint8* data, int size);
+        void ejectCartridge();
+        void cartridgeWrite(uint16 address, uint8 value);
+        uint8 cartridgeRead(uint16 address) const;
         void attachDiskImage(const uint8* imageData, int imageSize);
         void detachDiskImage();
         const uint8* getDiskImage();

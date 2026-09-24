@@ -22,6 +22,12 @@ for _ in range(8):
     state = adb("shell", "dumpsys", "input_method")
     if "mIsInputViewShown=true" in state and "mShowInputRequested=true" in state:
         print("Android soft keyboard appeared")
+        adb("shell", "uiautomator", "dump", "/sdcard/keyboard.xml")
+        hierarchy = ET.fromstring(adb("shell", "cat", "/sdcard/keyboard.xml"))
+        labels = {node.get("text") for node in hierarchy.iter()}
+        if not {"←", "↑", "↓", "→", "DEL", "RUN/STOP"}.issubset(labels):
+            raise SystemExit("C64 keyboard shortcut row is missing: " + repr(labels))
+        adb("shell", "input", "keyevent", "67")  # Backspace must not crash the app.
         break
 else:
     print("Input method state:", state[-5000:])

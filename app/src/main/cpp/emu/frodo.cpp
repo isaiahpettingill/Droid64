@@ -156,7 +156,7 @@ extern "C" int emu_command(int command)
         }
         case COMMAND_EJECT_CARTRIDGE:
         {
-            TheC64->cartridgeMode = 0;
+            TheC64->ejectCartridge();
             TheC64->Reset();
             break;
         }
