@@ -704,11 +704,13 @@ void MOS6569::WriteRegister(uint16 adr, uint8 byte)
 			break;
 
 		case 0x19: // IRQ flags
-			irq_flag = irq_flag & (~byte & 0x0f);
-			if (irq_flag & irq_mask)	// Set master bit if allowed interrupt still pending
+			irq_flag &= ~byte & 0x0f;
+			if (irq_flag & irq_mask) {
 				irq_flag |= 0x80;
-			else
-				the_cpu->ClearVICIRQ();	// Else clear interrupt
+				the_cpu->TriggerVICIRQ();
+			} else {
+				the_cpu->ClearVICIRQ();
+			}
 			break;
 		
 		case 0x1a:	// IRQ mask

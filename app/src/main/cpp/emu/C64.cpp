@@ -220,6 +220,13 @@ bool C64::loadCartridge(const uint8* data, int size)
     }
     if (!haveLow[0] || ((type == 0 && mode != 1) || type == 32) && !haveHigh[0])
         return false;
+    // The 512K Ocean hardware has 64 ROML banks and uses 8K mapping,
+    // regardless of the GAME/EXROM bits in the CRT header.
+    if (type == 5) {
+        int lowBanks = 0;
+        for (bool present : haveLow) if (present) ++lowBanks;
+        if (lowBanks == 64 && !haveHigh[0]) mode = 1;
+    }
     memcpy(cartridgeLow, low.data(), low.size());
     memcpy(cartridgeHigh, high.data(), high.size());
     memset(cartridgeRam, 0, sizeof(cartridgeRam));
@@ -243,7 +250,9 @@ void C64::cartridgeWrite(uint16 address, uint8 value)
         if ((address & 2) == 0) cartridgeBank = value & 0x3f;
         else {
             cartridgeControl = value & 7;
-            static const uint8 modes[8] = {3, 3, 1, 1, 2, 3, 0, 1};
+            // Control value 7 exposes ROMH too; loaders fetch compressed
+            // data at $a000 while this mode is active.
+            static const uint8 modes[8] = {3, 3, 1, 1, 2, 3, 0, 2};
             cartridgeMode = modes[cartridgeControl];
         }
     } else if (cartridgeType == 32 && address >= 0xdf00 && address <= 0xdfff) {
