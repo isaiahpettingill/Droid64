@@ -80,6 +80,8 @@ jobs:
             adb shell input keyevent BACK
             adb shell settings put system user_rotation 1
             sleep 5
+            test "$(adb logcat -d -v brief | grep -c 'initialized emulator kernel')" -eq 1
+            test "$(adb logcat -d -v brief | grep -c 'Activity.onCreate()')" -eq 1
             adb logcat -d -v brief | grep -E 'AndroidRuntime|FATAL EXCEPTION|org.codewiz.droid64|libDroid64|linker' | tail -100 || true
             adb shell pidof org.codewiz.droid64
             if adb logcat -d -v brief | grep -q 'FATAL EXCEPTION'; then echo 'App crashed during startup'; exit 1; fi
