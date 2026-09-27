@@ -78,22 +78,8 @@ jobs:
             adb shell cat /sdcard/window.xml | grep -q 'Insert cartridge'
             python3 scripts/check-keyboard.py
             adb shell input keyevent BACK
-            initial_kernels=$(adb logcat -d -v brief | grep -c 'initialized emulator kernel' || true)
-            initial_activities=$(adb logcat -d -v brief | grep -c 'Activity.onCreate()' || true)
-            test "$initial_kernels" -gt 0
-            test "$initial_activities" -gt 0
-            adb shell settings put system user_rotation 1
-            sleep 5
-            test "$(adb logcat -d -v brief | grep -c 'initialized emulator kernel')" -eq "$initial_kernels"
-            test "$(adb logcat -d -v brief | grep -c 'Activity.onCreate()')" -eq "$initial_activities"
-            adb shell input keyevent HOME
-            sleep 2
-            adb shell am start -n org.codewiz.droid64/ui.FullscreenActivity
-            sleep 2
-            test "$(adb logcat -d -v brief | grep -c 'initialized emulator kernel')" -eq "$initial_kernels"
+            bash scripts/check-lifecycle.sh
             adb logcat -d -v brief | grep -E 'AndroidRuntime|FATAL EXCEPTION|org.codewiz.droid64|libDroid64|linker' | tail -100 || true
-            adb shell pidof org.codewiz.droid64
-            if adb logcat -d -v brief | grep -q 'FATAL EXCEPTION'; then echo 'App crashed during startup'; exit 1; fi
       - name: Check release credentials
         if: github.event_name != 'pull_request'
         env:
