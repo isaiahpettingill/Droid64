@@ -31,8 +31,9 @@ startup.
 Swipe down from the upper-left corner of the C64 screen to open the hidden menu
 for D64 disks, T64 tapes, CRT cartridges, the Android keyboard, and controller
 mapping. The menu also offers **Load and run** for disk and tape images.
-Standard 8K/16K, Ocean, and EasyFlash CRT cartridges are supported; other
-cartridge hardware types are rejected. The keyboard has a scrollable row of
+Standard 8K/16K, Ocean, and EasyFlash CRT images can be loaded; game compatibility
+is still limited by the Frodo emulator core. Other cartridge hardware types are
+rejected. The keyboard has a scrollable row of
 C64 cursor keys, Delete, Return, function keys, Run/Stop, and Commodore.
 The on-screen joystick and fire button appear when no controller is connected
 and the keyboard is hidden. Plug in a USB controller or pair a Bluetooth
