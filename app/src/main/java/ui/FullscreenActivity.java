@@ -7,6 +7,7 @@ import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.Context;
 import android.content.pm.ConfigurationInfo;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.hardware.input.InputManager;
@@ -1360,18 +1361,20 @@ public class FullscreenActivity extends FragmentActivity implements FileDialog.O
     @Override
     protected void onRestart() {
         logger.info("Activity.onRestart()");
-        emuControl.stop();
-        emuControl.start();
-        if (isControlsVisible()) {
-            emuControl.pause();
-        }
         super.onRestart();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        screenWidth = screenHeight = 0.0f;
+        if (emuView != null) emuView.post(this::updateScreenSize);
+        updateTouchControls();
     }
 
     @Override
     protected void onStop() {
         logger.info("Activity.onStop()");
-        emuControl.stop();
         super.onStop();
     }
 
